@@ -17,7 +17,6 @@
         .match-info { display: flex; justify-content: space-between; color: #ccc; font-size: 14px; }
         .no-matches { text-align: center; padding: 40px; color: #ccc; font-size: 16px; }
         .refresh-btn { background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 20px auto; display: block; cursor: pointer; }
-        .live-badge { background: #ff0000; color: white; font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-left: 5px; }
         /* Telegram WebApp适配 */
         :root { --tg-viewport-height: 100vh; }
         body { padding-bottom: env(safe-area-inset-bottom); }
@@ -41,7 +40,7 @@
         tg.setHeaderColor('#121212');
         tg.setBackButtonColor('#4CAF50');
 
-        // 禁止外部链接跳转
+        // 禁止外部链接跳转（核心）
         document.addEventListener('click', (e) => {
             const target = e.target.closest('a');
             if (target && target.href) {
@@ -58,84 +57,91 @@
             document.getElementById('countdown').textContent = `⏰ ${days} days to kick-off`;
         }
 
-        // 🔥 核心修复：本地模拟比分（无需外部API，100%能加载）
-        function loadLiveScores() {
+        // 加载实时比分（适配你的API密钥）
+        async function loadLiveScores() {
             const container = document.getElementById('scores-container');
             container.innerHTML = '<div class="no-matches">Loading scores...</div>';
 
-            // 模拟延迟加载，更真实
-            setTimeout(() => {
-                // 模拟世界杯/各大联赛比分数据（可自定义）
-                const mockScores = [
-                    {
-                        home: "Brazil",
-                        away: "Argentina",
-                        score: "2 - 1",
-                        competition: "FIFA World Cup Qualifiers",
-                        status: "LIVE"
-                    },
-                    {
-                        home: "France",
-                        away: "Germany",
-                        score: "3 - 3",
-                        competition: "UEFA European Qualifiers",
-                        status: "FINISHED"
-                    },
-                    {
-                        home: "Manchester United",
-                        away: "Liverpool",
-                        score: "1 - 0",
-                        competition: "Premier League",
-                        status: "LIVE"
-                    },
-                    {
-                        home: "Real Madrid",
-                        away: "Barcelona",
-                        score: "2 - 2",
-                        competition: "LaLiga",
-                        status: "FINISHED"
-                    },
-                    {
-                        home: "Shanghai Port",
-                        away: "Beijing Guoan",
-                        score: "1 - 0",
-                        competition: "Chinese Super League",
-                        status: "LIVE"
-                    }
-                ];
+            try {
+                // 你的API密钥（已填入）
+                const API_KEY = '28fc60a4b1a74c9a8d9f0f9abdb17952';
+                
+                // 1. 先获取世界杯赛事（无实时则获取最近的比赛）
+                let res = await fetch('https://api.football-data.org/v4/competitions/WC/matches', {
+                    headers: { 'X-Auth-Token': API_KEY }
+                });
 
+                // 处理API限制（免费版可能需要切换端点）
+                if (!res.ok) {
+                    // 备用：获取所有联赛的实时比赛
+                    res = await fetch('https://api.football-data.org/v4/matches?status=IN_PLAY', {
+                        headers: { 'X-Auth-Token': API_KEY }
+                    });
+                }
+
+                const data = await res.json();
                 container.innerHTML = '';
 
-                // 渲染模拟比分卡片
-                mockScores.forEach(match => {
+                // 过滤有效比赛
+                const matches = data.matches || [];
+                const validMatches = matches.filter(m => 
+                    m.score && m.homeTeam && m.awayTeam && 
+                    (m.status === 'IN_PLAY' || m.status === 'PAUSED' || m.status === 'FINISHED')
+                );
+
+                // 无比赛时显示提示
+                if (validMatches.length === 0) {
+                    container.innerHTML = `
+                        <div class="no-matches">
+                            🚫 No live matches at the moment<br><br>
+                            Check back later for updates!
+                        </div>
+                    `;
+                    return;
+                }
+
+                // 渲染比赛卡片
+                validMatches.slice(0, 10).forEach(match => {
                     const card = document.createElement('div');
                     card.className = 'score-card';
                     
-                    const statusBadge = match.status === 'LIVE' ? 
-                        '<span class="live-badge">LIVE</span>' : '';
+                    // 格式化比分
+                    const homeScore = match.score.fullTime.home ?? 0;
+                    const awayScore = match.score.fullTime.away ?? 0;
+                    const status = match.status === 'IN_PLAY' ? 'LIVE' : 
+                                  match.status === 'PAUSED' ? 'PAUSED' : 'FINISHED';
 
                     card.innerHTML = `
                         <div class="match-header">
-                            <span class="team">${match.home}</span>
-                            <span class="score">${match.score}</span>
-                            <span class="team">${match.away}</span>
+                            <span class="team">${match.homeTeam.name}</span>
+                            <span class="score">${homeScore} - ${awayScore}</span>
+                            <span class="team">${match.awayTeam.name}</span>
                         </div>
                         <div class="match-info">
-                            <span>🏟️ ${match.competition}</span>
-                            <span>⏱️ ${match.status} ${statusBadge}</span>
+                            <span>🏟️ ${match.competition?.name || 'FIFA World Cup'}</span>
+                            <span>⏱️ ${status}</span>
                         </div>
                     `;
                     container.appendChild(card);
                 });
 
-            }, 800); // 800ms延迟，模拟网络请求
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="no-matches">
+                        ❌ Failed to load scores<br><br>
+                        Error: ${error.message}<br>
+                        Try refreshing or check back later.
+                    </div>
+                `;
+                console.error('Score load error:', error);
+            }
         }
 
         // 初始化
         updateCountdown();
         loadLiveScores();
-        // 每5分钟自动刷新
-        setInterval(loadLiveScores, 300000);
+        // 每3分钟自动刷新（避免API限流）
+        setInterval(loadLiveScores, 180000);
     </script>
 </body>
 </html>
