@@ -3,92 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>World Cup Live Scores</title>
+    <title>2026 World Cup Live Scores</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { background: #1a1a1a; color: white; padding: 20px; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .score-card { background: #2d2d2d; padding: 15px; border-radius: 10px; margin-bottom: 10px; }
-        .match-info { display: flex; justify-content: space-between; align-items: center; }
-        .team { font-size: 16px; font-weight: bold; }
-        .score { font-size: 20px; font-weight: bold; color: #4CAF50; }
-        .status { font-size: 12px; color: #ccc; margin-top: 5px; }
-        /* 隐藏Telegram WebApp顶部栏（可选） */
+        body { background: #121212; color: #fff; padding: 20px; min-height: 100vh; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; margin-bottom: 10px; }
+        .countdown { color: #4CAF50; font-size: 18px; }
+        .score-card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 15px; }
+        .match-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .team { font-size: 18px; font-weight: 600; }
+        .score { font-size: 22px; font-weight: bold; color: #4CAF50; padding: 0 15px; }
+        .match-info { display: flex; justify-content: space-between; color: #ccc; font-size: 14px; }
+        .no-matches { text-align: center; padding: 40px; color: #ccc; font-size: 16px; }
+        .refresh-btn { background: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 20px auto; display: block; cursor: pointer; }
+        /* Telegram WebApp适配 */
         :root { --tg-viewport-height: 100vh; }
+        body { padding-bottom: env(safe-area-inset-bottom); }
     </style>
-    <!-- Telegram WebApp JS SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div class="header">
-        <h1>🏆 2026 World Cup Live</h1>
-        <p id="countdown"></p>
+        <h1>🏆 2026 FIFA World Cup Live</h1>
+        <div class="countdown" id="countdown"></div>
     </div>
+
     <div id="scores-container"></div>
+    <button class="refresh-btn" onclick="loadLiveScores()">🔄 Refresh Scores</button>
 
     <script>
-        // 1. 初始化Telegram WebApp（禁止缩放、跳转）
+        // 初始化Telegram WebApp
         const tg = window.Telegram.WebApp;
-        tg.expand(); // 全屏显示
-        tg.disableVerticalSwipes(); // 禁止下滑退出
-        tg.setHeaderColor('#1a1a1a'); // 适配深色主题
+        tg.expand();
+        tg.disableVerticalSwipes();
+        tg.setHeaderColor('#121212');
+        tg.setBackButtonColor('#4CAF50');
 
-        // 2. 禁止所有外部链接跳转（核心）
+        // 禁止外部链接跳转（核心）
         document.addEventListener('click', (e) => {
             const target = e.target.closest('a');
             if (target && target.href) {
-                e.preventDefault(); // 阻止跳转
-                alert('External links are disabled in this app!'); // 可选：提示用户
+                e.preventDefault();
+                tg.showAlert('External links are disabled in this app!');
             }
         });
 
-        // 3. 世界杯倒计时
+        // 世界杯倒计时
         function updateCountdown() {
             const wcStart = new Date('2026-06-11');
             const now = new Date();
             const days = Math.ceil((wcStart - now) / (1000 * 60 * 60 * 24));
             document.getElementById('countdown').textContent = `⏰ ${days} days to kick-off`;
         }
-        updateCountdown();
-        setInterval(updateCountdown, 86400000);
 
-        // 4. 获取实时比分（用免费公开API，无外部跳转）
+        // 加载实时比分（适配你的API密钥）
         async function loadLiveScores() {
-            try {
-                // 免费足球比分API（稳定、无广告）
-                const res = await fetch('https://api.football-data.org/v4/competitions/WC/matches?status=IN_PLAY', {
-                    headers: { 'X-Auth-Token': '28fc60a4b1a74c9a8d9f0f9abdb17952' } // 去https://www.football-data.org/免费获取
-                });
-                const data = await res.json();
+            const container = document.getElementById('scores-container');
+            container.innerHTML = '<div class="no-matches">Loading scores...</div>';
 
-                const container = document.getElementById('scores-container');
-                if (data.matches.length === 0) {
-                    container.innerHTML = '<div class="score-card">No live matches at the moment.</div>';
+            try {
+                // 你的API密钥（已填入）
+                const API_KEY = '28fc60a4b1a74c9a8d9f0f9abdb17952';
+                
+                // 1. 先获取世界杯赛事（无实时则获取最近的比赛）
+                let res = await fetch('https://api.football-data.org/v4/competitions/WC/matches', {
+                    headers: { 'X-Auth-Token': API_KEY }
+                });
+
+                // 处理API限制（免费版可能需要切换端点）
+                if (!res.ok) {
+                    // 备用：获取所有联赛的实时比赛
+                    res = await fetch('https://api.football-data.org/v4/matches?status=IN_PLAY', {
+                        headers: { 'X-Auth-Token': API_KEY }
+                    });
+                }
+
+                const data = await res.json();
+                container.innerHTML = '';
+
+                // 过滤有效比赛
+                const matches = data.matches || [];
+                const validMatches = matches.filter(m => 
+                    m.score && m.homeTeam && m.awayTeam && 
+                    (m.status === 'IN_PLAY' || m.status === 'PAUSED' || m.status === 'FINISHED')
+                );
+
+                // 无比赛时显示提示
+                if (validMatches.length === 0) {
+                    container.innerHTML = `
+                        <div class="no-matches">
+                            🚫 No live matches at the moment<br><br>
+                            Check back later for updates!
+                        </div>
+                    `;
                     return;
                 }
 
-                // 渲染比分卡片（无外部链接）
-                data.matches.forEach(match => {
+                // 渲染比赛卡片
+                validMatches.slice(0, 10).forEach(match => {
                     const card = document.createElement('div');
                     card.className = 'score-card';
+                    
+                    // 格式化比分
+                    const homeScore = match.score.fullTime.home ?? 0;
+                    const awayScore = match.score.fullTime.away ?? 0;
+                    const status = match.status === 'IN_PLAY' ? 'LIVE' : 
+                                  match.status === 'PAUSED' ? 'PAUSED' : 'FINISHED';
+
                     card.innerHTML = `
-                        <div class="match-info">
+                        <div class="match-header">
                             <span class="team">${match.homeTeam.name}</span>
-                            <span class="score">${match.score.fullTime.home} - ${match.score.fullTime.away}</span>
+                            <span class="score">${homeScore} - ${awayScore}</span>
                             <span class="team">${match.awayTeam.name}</span>
                         </div>
-                        <div class="status">${match.status} • ${match.stage}</div>
+                        <div class="match-info">
+                            <span>🏟️ ${match.competition?.name || 'FIFA World Cup'}</span>
+                            <span>⏱️ ${status}</span>
+                        </div>
                     `;
                     container.appendChild(card);
                 });
-            } catch (e) {
-                document.getElementById('scores-container').innerHTML = '<div class="score-card">Failed to load live scores.</div>';
+
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="no-matches">
+                        ❌ Failed to load scores<br><br>
+                        Error: ${error.message}<br>
+                        Try refreshing or check back later.
+                    </div>
+                `;
+                console.error('Score load error:', error);
             }
         }
 
-        // 5. 加载比分并定时刷新（5分钟一次，不跳转）
+        // 初始化
+        updateCountdown();
         loadLiveScores();
-        setInterval(loadLiveScores, 300000); // 5分钟刷新一次
+        // 每3分钟自动刷新（避免API限流）
+        setInterval(loadLiveScores, 180000);
     </script>
 </body>
 </html>
